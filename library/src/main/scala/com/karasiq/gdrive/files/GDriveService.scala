@@ -3,7 +3,6 @@ package com.karasiq.gdrive.files
 import java.io.{InputStream, OutputStream}
 
 import scala.collection.JavaConverters._
-import scala.util.Try
 
 import com.google.api.client.http.InputStreamContent
 import com.google.api.services.drive.Drive
@@ -57,7 +56,7 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
         .setFields(GDrive.Entity.listFields)
         .execute()
         .asScala
-        .head
+        .headOption
     }
 
     def createFolder(parentId: String, name: String): GDrive.Entity = {
@@ -73,7 +72,7 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
 
     val rootEntity = GDrive.Entity("root", "", Nil)
     path.foldLeft(rootEntity) { (parent, name) ⇒
-      Try(getFolder(parent.id, name))
+      getFolder(parent.id, name)
         .getOrElse(createFolder(parent.id, name))
     }
   }
