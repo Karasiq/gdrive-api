@@ -49,32 +49,38 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   }
 
   def folder(path: Seq[String]): GDrive.Entity = {
-    def getFolder(parentId: String, name: String) = {
-      driveService.files()
-        .list()
-        .setQ(s"mimeType = 'application/vnd.google-apps.folder' and name='${escapeQuery(name)}' and '${escapeQuery(parentId)}' in parents")
-        .setFields(GDrive.Entity.listFields)
-        .execute()
-        .asScala
-        .headOption
-    }
-
-    def createFolder(parentId: String, name: String): GDrive.Entity = {
-      val file = new File()
-        .setName(name)
-        .setMimeType("application/vnd.google-apps.folder")
-        .setParents(Seq(parentId).asJava)
-
-      driveService.files().create(file)
-        .setFields(GDrive.Entity.fields)
-        .execute()
-    }
-
     val rootEntity = GDrive.Entity("root", "", Nil)
     path.foldLeft(rootEntity) { (parent, name) ⇒
-      getFolder(parent.id, name)
-        .getOrElse(createFolder(parent.id, name))
+      folder(parent.id, name).getOrElse(throw new NoSuchElementException(name))
     }
+  }
+
+  def createFolder(path: Seq[String]): GDrive.Entity = {
+    val rootEntity = GDrive.Entity("root", "", Nil)
+    path.foldLeft(rootEntity) { (parent, name) ⇒
+      folder(parent.id, name).getOrElse(createFolder(parent.id, name))
+    }
+  }
+
+  def folder(parentId: String, name: String) = {
+    driveService.files()
+      .list()
+      .setQ(s"mimeType = 'application/vnd.google-apps.folder' and name='${escapeQuery(name)}' and '${escapeQuery(parentId)}' in parents")
+      .setFields(GDrive.Entity.listFields)
+      .execute()
+      .asScala
+      .headOption
+  }
+
+  def createFolder(parentId: String, name: String): GDrive.Entity = {
+    val file = new File()
+      .setName(name)
+      .setMimeType("application/vnd.google-apps.folder")
+      .setParents(Seq(parentId).asJava)
+
+    driveService.files().create(file)
+      .setFields(GDrive.Entity.fields)
+      .execute()
   }
 
   def traverseFolder(path: Seq[String]): Map[Seq[String], Seq[GDrive.Entity]] = {
