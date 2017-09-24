@@ -16,4 +16,14 @@ object GDrive {
       Entity(file.getId, file.getName, file.getParents.asScala.toVector)
     }
   }
+
+  final case class Quota(totalSize: Long, usedSize: Long, maxUploadSize: Long)
+
+  object Quota {
+    private[gdrive] val fields = "maxUploadSize, storageQuota(limit, usage)"
+    
+    implicit def fromAbout(about: gd.About): Quota = {
+      Quota(about.getStorageQuota.getLimit, about.getStorageQuota.getUsage, about.getMaxUploadSize)
+    }
+  }
 }

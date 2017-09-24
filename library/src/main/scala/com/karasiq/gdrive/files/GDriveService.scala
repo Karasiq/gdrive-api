@@ -23,6 +23,12 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
     .setApplicationName(applicationName)
     .build()
 
+  def quota(): GDrive.Quota = {
+    driveService.about().get()
+      .setFields(GDrive.Quota.fields)
+      .execute()
+  }
+
   def folders(): Seq[GDrive.Entity] = {
     driveService.files()
       .list()

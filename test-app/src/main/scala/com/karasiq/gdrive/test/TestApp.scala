@@ -6,6 +6,7 @@ import java.nio.file.Paths
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 
+import com.karasiq.common.memory.MemorySize
 import com.karasiq.gdrive.context.GDriveContext
 import com.karasiq.gdrive.files.GDriveService
 import com.karasiq.gdrive.oauth.GDriveOAuth
@@ -19,6 +20,8 @@ object TestApp extends App {
   implicit val session = oauth.authorize(config.getString("user"))
 
   val service = GDriveService("gdrive-test")
+  val quota = service.quota()
+  println(MemorySize(quota.usedSize) + " of " + MemorySize(quota.totalSize) + " (max: " + MemorySize(quota.maxUploadSize) + ")")
   val folder = service.folder(Seq("gdrive", "test"))
 
   def testInputStream() = new ByteArrayInputStream(ByteString("TEST FILE CONTENT").toArray)
