@@ -36,4 +36,5 @@ object TestApp extends App {
   }
   println(service.files(folder.id))
   println(service.upload(folder.id, "test.txt", testInputStream()))
+  println(service.traverseFolder(Nil))
 }

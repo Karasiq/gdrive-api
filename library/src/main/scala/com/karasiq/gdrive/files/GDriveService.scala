@@ -37,6 +37,14 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
       .asScala
   }
 
+  def folders(parentId: String): Seq[GDrive.Entity] = {
+    driveService.files().list()
+      .setQ(s"mimeType = 'application/vnd.google-apps.folder' and '${escapeQuery(parentId)}' in parents")
+      .setFields(GDrive.Entity.listFields)
+      .execute()
+      .asScala
+  }
+
   def folder(id: String): GDrive.Entity = {
     this.file(id)
   }
@@ -63,10 +71,21 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
         .execute()
     }
 
-    path.foldLeft(GDrive.Entity("root", "", Nil)) { (parent, name) ⇒
+    val rootEntity = GDrive.Entity("root", "", Nil)
+    path.foldLeft(rootEntity) { (parent, name) ⇒
       Try(getFolder(parent.id, name))
         .getOrElse(createFolder(parent.id, name))
     }
+  }
+
+  def traverseFolder(path: Seq[String]): Map[Seq[String], Seq[GDrive.Entity]] = {
+    def traverseFolderRec(path: Seq[String], folder: GDrive.Entity): Iterator[(Seq[String], Seq[GDrive.Entity])] = {
+      val files = this.files(folder.id)
+      def subFolders() = this.folders(folder.id)
+      Iterator.single(path → files) ++ subFolders().iterator.flatMap(folder ⇒ traverseFolderRec(path :+ folder.name, folder))
+    }
+
+    traverseFolderRec(path, this.folder(path)).toMap
   }
 
   def files: Seq[GDrive.Entity] = {
