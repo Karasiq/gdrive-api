@@ -2,6 +2,7 @@ package com.karasiq.gdrive.transport
 
 import java.net.{InetSocketAddress, Proxy}
 
+import scala.collection.JavaConverters._
 import scala.util.Try
 
 import com.google.api.client.http.HttpTransport
@@ -9,6 +10,8 @@ import com.google.api.client.http.apache.ApacheHttpTransport
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.typesafe.config.Config
 import org.apache.http.HttpHost
+import org.apache.http.conn.params.{ConnManagerPNames, ConnPerRouteBean}
+import org.apache.http.params.HttpParams
 
 import com.karasiq.common.configs.ConfigImplicits._
 
@@ -20,18 +23,30 @@ object Transports {
     }
 
     config.optional(_.getString("transport-type").toLowerCase) match {
+      case Some("apache") | Some("apache-http") | None ⇒
+        val builder = new ApacheHttpTransport.Builder()
+          .setProxy(createProxy(Proxies.apacheProxy))
+        Configs.applyApacheHttpParams(builder.getHttpParams, config.getConfigIfExists("http-parameters"))
+        builder.build()
+
       case Some("net") | Some("java.net") ⇒
         new NetHttpTransport.Builder()
           .setProxy(createProxy(Proxies.javaNetProxy))
           .build()
 
-      case Some("apache") | Some("apache-http") | None ⇒
-        new ApacheHttpTransport.Builder()
-          .setProxy(createProxy(Proxies.apacheProxy))
-          .build()
-
       case Some(other) ⇒
         throw new IllegalArgumentException(other)
+    }
+  }
+
+  private[this] object Configs {
+    // org.apache.http.params.CoreProtocolPNames
+    // org.apache.http.conn.params.ConnManagerPNames
+    def applyApacheHttpParams(p: HttpParams, config: Config): Unit = {
+      config.root().asScala.foreach { case (key, value) ⇒
+        if (key == ConnManagerPNames.MAX_CONNECTIONS_PER_ROUTE) p.setParameter(key, new ConnPerRouteBean(value.unwrapped().asInstanceOf[Int]))
+        else p.setParameter(key, value.unwrapped())
+      }
     }
   }
 

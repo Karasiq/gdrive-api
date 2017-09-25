@@ -22,7 +22,7 @@ object TestApp extends App {
   val service = GDriveService("gdrive-test")
   val quota = service.quota()
   println(MemorySize(quota.usedSize) + " of " + MemorySize(quota.totalSize) + " (max: " + MemorySize(quota.maxUploadSize) + ")")
-  val folder = service.folder(Seq("gdrive", "test"))
+  val folder = service.createFolder(Seq("gdrive", "test"))
 
   def testInputStream() = new ByteArrayInputStream(ByteString("TEST FILE CONTENT").toArray)
   if (service.fileExists(folder.id, "test.txt")) {
