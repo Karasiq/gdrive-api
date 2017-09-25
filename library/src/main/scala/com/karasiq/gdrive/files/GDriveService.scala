@@ -12,6 +12,7 @@ import com.google.api.services.drive.model.{File, FileList}
 
 import com.karasiq.gdrive.context.GDriveContext
 import com.karasiq.gdrive.oauth.GDriveSession
+import com.karasiq.gdrive.query.GDriveUtils
 
 object GDriveService {
   def apply(applicationName: String)(implicit context: GDriveContext, session: GDriveSession): GDriveService = {
@@ -20,6 +21,9 @@ object GDriveService {
 }
 
 class GDriveService(applicationName: String)(implicit context: GDriveContext, session: GDriveSession) {
+  // -----------------------------------------------------------------------
+  // Aliases
+  // -----------------------------------------------------------------------
   final type EntityId = String
   final type EntityPath = Seq[EntityId]
   final type EntityList = Seq[GDrive.Entity]
@@ -29,16 +33,25 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   import com.karasiq.gdrive.query.{GDriveQueries ⇒ Q}
   import com.karasiq.gdrive.query.GApiQuery.DSL._
 
+  // -----------------------------------------------------------------------
+  // Context
+  // -----------------------------------------------------------------------
   val driveService = new Drive.Builder(context.transport, context.jsonFactory, session.credential)
     .setApplicationName(applicationName)
     .build()
 
+  // -----------------------------------------------------------------------
+  // Quota
+  // -----------------------------------------------------------------------
   def quota(): GDrive.Quota = {
     driveService.about().get()
       .setFields(GDrive.Quota.fields)
       .execute()
   }
 
+  // -----------------------------------------------------------------------
+  // Folders
+  // -----------------------------------------------------------------------
   def folders(): EntityList = {
     fileQuery(Q.isFolder && Q.nonTrashed)
   }
@@ -52,15 +65,13 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   }
 
   def folder(path: EntityPath): GDrive.Entity = {
-    val rootEntity = GDrive.Entity("root", "", Nil)
-    path.foldLeft(rootEntity) { (parent, name) ⇒
+    path.foldLeft(GDriveUtils.RootEntity) { (parent, name) ⇒
       folder(parent.id, name).getOrElse(throw new NoSuchElementException(name))
     }
   }
 
   def createFolder(path: EntityPath): GDrive.Entity = {
-    val rootEntity = GDrive.Entity("root", "", Nil)
-    path.foldLeft(rootEntity) { (parent, name) ⇒
+    path.foldLeft(GDriveUtils.RootEntity) { (parent, name) ⇒
       folder(parent.id, name).getOrElse(createFolder(parent.id, name))
     }
   }
@@ -72,7 +83,7 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   def createFolder(parentId: EntityId, name: String): GDrive.Entity = {
     val file = new File()
       .setName(name)
-      .setMimeType("application/vnd.google-apps.folder")
+      .setMimeType(GDriveUtils.FolderMime)
       .setParents(Seq(parentId).asJava)
 
     driveService.files().create(file).toEntity
@@ -88,6 +99,9 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
     traverseFolderRec(path, this.folder(path)).toMap
   }
 
+  // -----------------------------------------------------------------------
+  // Files
+  // -----------------------------------------------------------------------
   def files: EntityList = {
     driveService.files().list().toEntityList
   }
@@ -118,7 +132,10 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
       .execute()
   }
 
-  def upload(parentId: EntityId, name: String, contentType: String = "application/octet-stream")
+  // -----------------------------------------------------------------------
+  // Upload/download
+  // -----------------------------------------------------------------------
+  def upload(parentId: EntityId, name: String, contentType: String = GDriveUtils.DefaultMime)
             (content: GDriveContent): GDrive.Entity = {
 
     def tryDeleteTempFile(name: String): Unit = {
@@ -150,6 +167,9 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
       .executeMediaAndDownloadTo(outputStream)
   }
 
+  // -----------------------------------------------------------------------
+  // Utils
+  // -----------------------------------------------------------------------
   object implicits {
     implicit class FileRequestOps(request: DriveRequest[File]) {
       def toEntity: GDrive.Entity = {

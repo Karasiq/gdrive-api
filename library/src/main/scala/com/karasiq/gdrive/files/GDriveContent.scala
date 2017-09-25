@@ -7,17 +7,17 @@ import scala.language.implicitConversions
 
 import com.google.api.client.http.{AbstractInputStreamContent, ByteArrayContent, FileContent, InputStreamContent}
 
+import com.karasiq.gdrive.query.GDriveUtils
+
 final case class GDriveContent(content: AbstractInputStreamContent) extends AnyVal
 
 object GDriveContent {
-  val DefaultContentType = "application/octet-stream"
-
   implicit def fromInputStream(inputStream: InputStream) = {
-    GDriveContent(new InputStreamContent(DefaultContentType, inputStream))
+    GDriveContent(new InputStreamContent(GDriveUtils.DefaultMime, inputStream))
   }
 
   implicit def fromBytes(bytes: Array[Byte]) = {
-    GDriveContent(new ByteArrayContent(DefaultContentType, bytes))
+    GDriveContent(new ByteArrayContent(GDriveUtils.DefaultMime, bytes))
   }
 
   implicit def fromString(str: String) = {
@@ -25,7 +25,7 @@ object GDriveContent {
   }
 
   implicit def fromFile(file: File) = {
-    GDriveContent(new FileContent(DefaultContentType, file))
+    GDriveContent(new FileContent(GDriveUtils.DefaultMime, file))
   }
 
   implicit def toInputStreamContent(c: GDriveContent): AbstractInputStreamContent = c.content
