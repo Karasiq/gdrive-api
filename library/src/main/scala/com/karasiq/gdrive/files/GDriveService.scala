@@ -7,7 +7,7 @@ import scala.collection.JavaConverters._
 import scala.util.Try
 import scala.util.control.NonFatal
 
-import com.google.api.client.util.IOUtils
+import com.google.api.client.util.{IOUtils, Sleeper}
 import com.google.api.services.drive.{Drive, DriveRequest}
 import com.google.api.services.drive.model.{File, FileList}
 
@@ -152,8 +152,9 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
         .create(fileMetadata, content)
         .setDisableGZipContent(true)
 
+      //noinspection ConvertExpressionToSAM
       request.getMediaHttpUploader
-        .setSleeper(_ ⇒ ())
+        .setSleeper(new Sleeper { def sleep(millis: Long): Unit = () })
         .setDirectUploadEnabled(true)
         .setDisableGZipContent(true)
 
