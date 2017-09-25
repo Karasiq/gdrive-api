@@ -1,12 +1,13 @@
 package com.karasiq.gdrive.files
 
-import java.io.OutputStream
+import java.io.{InputStream, OutputStream}
 import java.util.UUID
 
 import scala.collection.JavaConverters._
 import scala.util.Try
 import scala.util.control.NonFatal
 
+import com.google.api.client.util.IOUtils
 import com.google.api.services.drive.{Drive, DriveRequest}
 import com.google.api.services.drive.model.{File, FileList}
 
@@ -147,9 +148,16 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
       .setParents(Seq(parentId).asJava)
 
     try {
-      val result = driveService.files()
+      val request = driveService.files()
         .create(fileMetadata, content)
-        .toEntity
+        .setDisableGZipContent(true)
+
+      request.getMediaHttpUploader
+        .setSleeper(_ ⇒ ())
+        .setDirectUploadEnabled(true)
+        .setDisableGZipContent(true)
+
+      val result = request.toEntity
 
       driveService.files()
         .update(result.id, new File().setName(name))
@@ -160,9 +168,18 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
     }
   }
 
-  def download(id: EntityId, outputStream: OutputStream): Unit = {
-    driveService.files().get(id)
-      .executeMediaAndDownloadTo(outputStream)
+  def download(fileId: EntityId): InputStream = {
+    val request = driveService.files().get(fileId)
+
+    request.setDisableGZipContent(true)
+    request.getMediaHttpDownloader.setDirectDownloadEnabled(true)
+
+    request.executeMediaAsInputStream()
+  }
+
+  def download(fileId: EntityId, outputStream: OutputStream): Unit = {
+    val inputStream = download(fileId)
+    IOUtils.copy(inputStream, outputStream)
   }
 
   // -----------------------------------------------------------------------
