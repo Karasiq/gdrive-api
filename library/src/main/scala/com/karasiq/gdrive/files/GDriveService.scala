@@ -135,9 +135,7 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   // -----------------------------------------------------------------------
   // Upload/download
   // -----------------------------------------------------------------------
-  def upload(parentId: EntityId, name: String, contentType: String = GDriveUtils.DefaultMime)
-            (content: GDriveContent): GDrive.Entity = {
-
+  def upload(parentId: EntityId, name: String, content: GDriveContent): GDrive.Entity = {
     def tryDeleteTempFile(name: String): Unit = {
       val tempFile = Try(fileQuery(Q.isFile && Q.name(name))) getOrElse Nil
       tempFile.foreach(f ⇒ Try(delete(f.id)))

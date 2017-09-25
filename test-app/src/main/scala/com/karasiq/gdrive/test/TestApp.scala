@@ -34,6 +34,6 @@ object TestApp extends App {
     }
   }
   println(service.files(folder.id))
-  println(service.upload(folder.id, "test.txt")("TEST FILE CONTENT"))
+  println(service.upload(folder.id, "test.txt", "TEST FILE CONTENT"))
   println(service.traverseFolder(Nil))
 }
