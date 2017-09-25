@@ -7,7 +7,7 @@ import scala.collection.JavaConverters._
 import scala.util.Try
 import scala.util.control.NonFatal
 
-import com.google.api.client.util.{IOUtils, Sleeper}
+import com.google.api.client.util.IOUtils
 import com.google.api.services.drive.{Drive, DriveRequest}
 import com.google.api.services.drive.model.{File, FileList}
 
@@ -154,11 +154,11 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
 
       //noinspection ConvertExpressionToSAM
       request.getMediaHttpUploader
-        .setSleeper(new Sleeper { def sleep(millis: Long): Unit = () })
+        // .setSleeper(new Sleeper { def sleep(millis: Long): Unit = () })
         .setDirectUploadEnabled(true)
         .setDisableGZipContent(true)
 
-      val result = request.toEntity
+      val result = concurrent.blocking(request.toEntity)
 
       driveService.files()
         .update(result.id, new File().setName(name))
@@ -180,7 +180,7 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
 
   def download(fileId: EntityId, outputStream: OutputStream): Unit = {
     val inputStream = download(fileId)
-    IOUtils.copy(inputStream, outputStream)
+    concurrent.blocking(IOUtils.copy(inputStream, outputStream))
   }
 
   // -----------------------------------------------------------------------
