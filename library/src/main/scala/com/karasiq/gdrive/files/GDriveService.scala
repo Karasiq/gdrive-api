@@ -1,13 +1,12 @@
 package com.karasiq.gdrive.files
 
-import java.io.{InputStream, OutputStream}
+import java.io.OutputStream
 import java.util.UUID
 
 import scala.collection.JavaConverters._
 import scala.util.Try
 import scala.util.control.NonFatal
 
-import com.google.api.client.http.InputStreamContent
 import com.google.api.services.drive.{Drive, DriveRequest}
 import com.google.api.services.drive.model.{File, FileList}
 
@@ -21,6 +20,15 @@ object GDriveService {
 }
 
 class GDriveService(applicationName: String)(implicit context: GDriveContext, session: GDriveSession) {
+  final type EntityId = String
+  final type EntityPath = Seq[EntityId]
+  final type EntityList = Seq[GDrive.Entity]
+
+  import implicits._
+
+  import com.karasiq.gdrive.query.{GDriveQueries ⇒ Q}
+  import com.karasiq.gdrive.query.GApiQuery.DSL._
+
   val driveService = new Drive.Builder(context.transport, context.jsonFactory, session.credential)
     .setApplicationName(applicationName)
     .build()
@@ -31,46 +39,37 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
       .execute()
   }
 
-  def folders(): Seq[GDrive.Entity] = {
-    driveService.files()
-      .list()
-      .setQ("mimeType = 'application/vnd.google-apps.folder' and trashed = false")
-      .toEntityList
+  def folders(): EntityList = {
+    fileQuery(Q.isFolder && Q.nonTrashed)
   }
 
-  def folders(parentId: String): Seq[GDrive.Entity] = {
-    driveService.files().list()
-      .setQ(s"mimeType = 'application/vnd.google-apps.folder' and '${escapeQuery(parentId)}' in parents and trashed = false")
-      .toEntityList
+  def folders(parentId: EntityId): EntityList = {
+    fileQuery(Q.isFolder && Q.nonTrashed && Q.parent(parentId))
   }
 
-  def folder(id: String): GDrive.Entity = {
-    this.file(id)
+  def folder(folderId: EntityId): GDrive.Entity = {
+    this.file(folderId)
   }
 
-  def folder(path: Seq[String]): GDrive.Entity = {
+  def folder(path: EntityPath): GDrive.Entity = {
     val rootEntity = GDrive.Entity("root", "", Nil)
     path.foldLeft(rootEntity) { (parent, name) ⇒
       folder(parent.id, name).getOrElse(throw new NoSuchElementException(name))
     }
   }
 
-  def createFolder(path: Seq[String]): GDrive.Entity = {
+  def createFolder(path: EntityPath): GDrive.Entity = {
     val rootEntity = GDrive.Entity("root", "", Nil)
     path.foldLeft(rootEntity) { (parent, name) ⇒
       folder(parent.id, name).getOrElse(createFolder(parent.id, name))
     }
   }
 
-  def folder(parentId: String, name: String) = {
-    driveService.files()
-      .list()
-      .setQ(s"mimeType = 'application/vnd.google-apps.folder' and name='${escapeQuery(name)}' and '${escapeQuery(parentId)}' in parents and trashed = false")
-      .toEntityList
-      .headOption
+  def folder(parentId: EntityId, name: String) = {
+    fileQuery(Q.isFolder && Q.nonTrashed && Q.parent(parentId) && Q.name(name)).headOption
   }
 
-  def createFolder(parentId: String, name: String): GDrive.Entity = {
+  def createFolder(parentId: EntityId, name: String): GDrive.Entity = {
     val file = new File()
       .setName(name)
       .setMimeType("application/vnd.google-apps.folder")
@@ -79,8 +78,8 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
     driveService.files().create(file).toEntity
   }
 
-  def traverseFolder(path: Seq[String]): Map[Seq[String], Seq[GDrive.Entity]] = {
-    def traverseFolderRec(path: Seq[String], folder: GDrive.Entity): Iterator[(Seq[String], Seq[GDrive.Entity])] = {
+  def traverseFolder(path: EntityPath): Map[EntityPath, EntityList] = {
+    def traverseFolderRec(path: EntityPath, folder: GDrive.Entity): Iterator[(EntityPath, EntityList)] = {
       val files = this.files(folder.id)
       def subFolders() = this.folders(folder.id)
       Iterator.single(path → files) ++ subFolders().iterator.flatMap(folder ⇒ traverseFolderRec(path :+ folder.name, folder))
@@ -89,44 +88,41 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
     traverseFolderRec(path, this.folder(path)).toMap
   }
 
-  def files: Seq[GDrive.Entity] = {
+  def files: EntityList = {
     driveService.files().list().toEntityList
   }
 
-  def files(parentId: String): Seq[GDrive.Entity] = {
-    driveService.files().list()
-      .setQ(s"mimeType != 'application/vnd.google-apps.folder' and '${escapeQuery(parentId)}' in parents and trashed = false")
-      .toEntityList
+  def fileQuery(query: String): EntityList = {
+    driveService.files().list().setQ(query).toEntityList
   }
 
-  def files(parentId: String, name: String): Seq[GDrive.Entity] = {
-    driveService.files().list()
-      .setQ(s"mimeType != 'application/vnd.google-apps.folder' and '${escapeQuery(parentId)}' in parents and name = '${escapeQuery(name)}' and trashed = false")
-      .toEntityList
+  def files(parentId: EntityId): EntityList = {
+    fileQuery(Q.isFile && Q.nonTrashed && Q.parent(parentId))
   }
 
-  def file(id: String): GDrive.Entity = {
-    driveService.files().get(id)
-      .toEntity
+  def files(parentId: EntityId, name: String): EntityList = {
+    fileQuery(Q.isFile && Q.nonTrashed && Q.parent(parentId) && Q.name(name))
   }
 
-  def fileExists(parentId: String, name: String): Boolean = {
+  def file(id: EntityId): GDrive.Entity = {
+    driveService.files().get(id).toEntity
+  }
+
+  def fileExists(parentId: EntityId, name: String): Boolean = {
     files(parentId, name).nonEmpty
   }
 
-  def delete(id: String): Unit = {
-    driveService.files().delete(id)
+  def delete(fileId: EntityId): Unit = {
+    driveService.files()
+      .delete(fileId)
       .execute()
   }
 
-  def upload(parentId: String, name: String, inputStream: InputStream): GDrive.Entity = {
-    def tryDeleteTempFile(name: String): Unit = {
-      val tempFile = Try {
-        driveService.files().list()
-          .setQ(s"mimeType != 'application/vnd.google-apps.folder' and name = '${escapeQuery(name)}'")
-          .toEntityList
-      } getOrElse Nil
+  def upload(parentId: EntityId, name: String, contentType: String = "application/octet-stream")
+            (content: GDriveContent): GDrive.Entity = {
 
+    def tryDeleteTempFile(name: String): Unit = {
+      val tempFile = Try(fileQuery(Q.isFile && Q.name(name))) getOrElse Nil
       tempFile.foreach(f ⇒ Try(delete(f.id)))
     }
 
@@ -134,9 +130,7 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
     val fileMetadata = new File()
       .setName(tempFileName)
       .setParents(Seq(parentId).asJava)
-      // .setOriginalFilename(name)
 
-    val content = new InputStreamContent("application/octet-stream", inputStream)
     try {
       val result = driveService.files()
         .create(fileMetadata, content)
@@ -151,33 +145,31 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
     }
   }
 
-  def download(id: String, outputStream: OutputStream): Unit = {
+  def download(id: EntityId, outputStream: OutputStream): Unit = {
     driveService.files().get(id)
       .executeMediaAndDownloadTo(outputStream)
   }
 
-  private[this] def escapeQuery(name: String): String = {
-    name.replaceAllLiterally("'", "\\'")
-  }
-
-  private implicit class FileRequestOps(request: DriveRequest[File]) {
-    def toEntity: GDrive.Entity = {
-      request.setFields(GDrive.Entity.fields)
-        .execute()
+  object implicits {
+    implicit class FileRequestOps(request: DriveRequest[File]) {
+      def toEntity: GDrive.Entity = {
+        request.setFields(GDrive.Entity.fields)
+          .execute()
+      }
     }
-  }
 
-  private implicit class FileListRequestOps(request: DriveRequest[FileList]) {
-    def toEntityList: Seq[GDrive.Entity] = {
-      request.setFields(GDrive.Entity.listFields)
-        .execute()
-        .toEntityList
+    implicit class FileListRequestOps(request: DriveRequest[FileList]) {
+      def toEntityList: EntityList = {
+        request.setFields(GDrive.Entity.listFields)
+          .execute()
+          .toEntityList
+      }
     }
-  }
 
-  private implicit class FileListOps(fl: FileList) {
-    def toEntityList: Seq[GDrive.Entity] = {
-      fl.getFiles.asScala.map(GDrive.Entity.fromFile)
+    implicit class FileListOps(fl: FileList) {
+      def toEntityList: EntityList = {
+        fl.getFiles.asScala.map(GDrive.Entity.fromFile)
+      }
     }
   }
 }

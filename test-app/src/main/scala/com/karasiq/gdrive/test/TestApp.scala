@@ -1,6 +1,6 @@
 package com.karasiq.gdrive.test
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, File}
+import java.io.{ByteArrayOutputStream, File}
 import java.nio.file.Paths
 
 import akka.util.ByteString
@@ -24,7 +24,6 @@ object TestApp extends App {
   println(MemorySize(quota.usedSize) + " of " + MemorySize(quota.totalSize) + " (max: " + MemorySize(quota.maxUploadSize) + ")")
   val folder = service.createFolder(Seq("gdrive", "test"))
 
-  def testInputStream() = new ByteArrayInputStream(ByteString("TEST FILE CONTENT").toArray)
   if (service.fileExists(folder.id, "test.txt")) {
     println("File exists")
     service.files(folder.id, "test.txt").foreach { f ⇒
@@ -35,6 +34,6 @@ object TestApp extends App {
     }
   }
   println(service.files(folder.id))
-  println(service.upload(folder.id, "test.txt", testInputStream()))
+  println(service.upload(folder.id, "test.txt")("TEST FILE CONTENT"))
   println(service.traverseFolder(Nil))
 }
