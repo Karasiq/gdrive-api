@@ -28,6 +28,7 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   final type EntityId = String
   final type EntityPath = Seq[EntityId]
   final type EntityList = Seq[GDrive.Entity]
+  final type EntityStream = Iterator[GDrive.Entity]
 
   import implicits._
 
@@ -53,11 +54,11 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   // -----------------------------------------------------------------------
   // Folders
   // -----------------------------------------------------------------------
-  def folders(): EntityList = {
+  def folders(): EntityStream = {
     fileQuery(Q.isFolder && Q.nonTrashed)
   }
 
-  def folders(parentId: EntityId): EntityList = {
+  def folders(parentId: EntityId): EntityStream = {
     fileQuery(Q.isFolder && Q.nonTrashed && Q.parent(parentId))
   }
 
@@ -78,7 +79,9 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   }
 
   def folder(parentId: EntityId, name: String) = {
-    fileQuery(Q.isFolder && Q.nonTrashed && Q.parent(parentId) && Q.name(name)).headOption
+    fileQuery(Q.isFolder && Q.nonTrashed && Q.parent(parentId) && Q.name(name))
+      .buffered
+      .headOption
   }
 
   def createFolder(parentId: EntityId, name: String): GDrive.Entity = {
@@ -90,32 +93,35 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
     driveService.files().create(file).toEntity
   }
 
-  def traverseFolder(path: EntityPath): Map[EntityPath, EntityList] = {
-    def traverseFolderRec(path: EntityPath, folder: GDrive.Entity): Iterator[(EntityPath, EntityList)] = {
-      val files = this.files(folder.id)
-      def subFolders() = this.folders(folder.id)
-      Iterator.single(path → files) ++ subFolders().iterator.flatMap(folder ⇒ traverseFolderRec(path :+ folder.name, folder))
+  def traverseFolder(path: EntityPath): Iterator[(EntityPath, GDrive.Entity)] = {
+    def traverseFolderRec(path: EntityPath, folderId: EntityId): Iterator[(EntityPath, GDrive.Entity)] = {
+      def files() = this.files(folderId)
+      def subFolders() = this.folders(folderId)
+
+      files().map((path, _)) ++ subFolders().flatMap(folder ⇒ traverseFolderRec(path :+ folder.name, folder.id))
     }
 
-    traverseFolderRec(path, this.folder(path)).toMap
+    traverseFolderRec(path, this.folder(path).id)
   }
 
   // -----------------------------------------------------------------------
   // Files
   // -----------------------------------------------------------------------
-  def files: EntityList = {
-    driveService.files().list().toEntityList
+  def files: EntityStream = {
+    driveService.files().list().toEntityStream
   }
 
-  def fileQuery(query: String): EntityList = {
-    driveService.files().list().setQ(query).toEntityList
+  def fileQuery(query: String): EntityStream = {
+    driveService.files().list()
+      .setQ(query)
+      .toEntityStream
   }
 
-  def files(parentId: EntityId): EntityList = {
+  def files(parentId: EntityId): EntityStream = {
     fileQuery(Q.isFile && Q.nonTrashed && Q.parent(parentId))
   }
 
-  def files(parentId: EntityId, name: String): EntityList = {
+  def files(parentId: EntityId, name: String): EntityStream = {
     fileQuery(Q.isFile && Q.nonTrashed && Q.parent(parentId) && Q.name(name))
   }
 
@@ -194,11 +200,26 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
       }
     }
 
-    implicit class FileListRequestOps(request: DriveRequest[FileList]) {
+    implicit class GenFileListRequestOps(request: DriveRequest[FileList]) {
       def toEntityList: EntityList = {
         request.setFields(GDrive.Entity.listFields)
           .execute()
           .toEntityList
+      }
+    }
+
+    implicit class FileListRequestOps(request: Drive#Files#List) {
+      def toEntityStream: EntityStream = {
+        def toEntityStreamRec(request: Drive#Files#List): EntityStream = {
+          val result = request.execute()
+          val resultList = result.toEntityList
+          resultList.toIterator ++ Option(result.getNextPageToken)
+            .iterator
+            .flatMap(token ⇒ toEntityStreamRec(request.setPageToken(token)))
+        }
+        toEntityStreamRec(request
+          .setPageSize(1000)
+          .setFields("nextPageToken, " + GDrive.Entity.listFields))
       }
     }
 

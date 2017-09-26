@@ -33,7 +33,8 @@ object TestApp extends App {
       println(ByteString(outputStream.toByteArray).utf8String)
     }
   }
-  println(service.files(folder.id))
+  println(service.files(folder.id).toVector)
   println(service.upload(folder.id, "test.txt", "TEST FILE CONTENT"))
-  println(service.traverseFolder(Nil))
+
+  service.traverseFolder(Nil).foreach(println)
 }
