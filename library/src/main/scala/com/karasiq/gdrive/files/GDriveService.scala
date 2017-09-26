@@ -80,7 +80,8 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
 
   def folder(parentId: EntityId, name: String) = {
     fileQuery(Q.isFolder && Q.nonTrashed && Q.parent(parentId) && Q.name(name))
-      .buffered
+      .take(1)
+      .toSeq
       .headOption
   }
 
