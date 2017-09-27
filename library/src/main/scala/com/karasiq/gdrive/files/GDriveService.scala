@@ -5,7 +5,6 @@ import java.util.UUID
 
 import scala.collection.JavaConverters._
 import scala.util.Try
-import scala.util.control.NonFatal
 
 import com.google.api.client.util.IOUtils
 import com.google.api.services.drive.{Drive, DriveRequest}
@@ -114,6 +113,7 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
 
   def fileQuery(query: String): EntityStream = {
     driveService.files().list()
+      .setOrderBy("createdTime")
       .setQ(query)
       .toEntityStream
   }
@@ -144,35 +144,31 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   // Upload/download
   // -----------------------------------------------------------------------
   def upload(parentId: EntityId, name: String, content: GDriveContent): GDrive.Entity = {
-    def tryDeleteTempFile(name: String): Unit = {
-      val tempFile = Try(fileQuery(Q.isFile && Q.name(name))) getOrElse Nil
-      tempFile.foreach(f ⇒ Try(delete(f.id)))
+    def deleteTempFile(id: EntityId): Unit = {
+      Try(driveService.files().delete(id).execute())
     }
 
     val tempFileName = name + "_" + UUID.randomUUID() + ".tmp"
-    val fileMetadata = new File()
-      .setName(tempFileName)
-      .setParents(Seq(parentId).asJava)
+    val fileMetadata = new File().setName(tempFileName)
+    
+    val request = driveService.files()
+      .create(fileMetadata, content)
+      .setDisableGZipContent(true)
+
+    //noinspection ConvertExpressionToSAM
+    request.getMediaHttpUploader
+      // .setSleeper(new Sleeper { def sleep(millis: Long): Unit = () })
+      .setDirectUploadEnabled(true)
+      .setDisableGZipContent(true)
+
+    val result = concurrent.blocking(request.toEntity)
 
     try {
-      val request = driveService.files()
-        .create(fileMetadata, content)
-        .setDisableGZipContent(true)
-
-      //noinspection ConvertExpressionToSAM
-      request.getMediaHttpUploader
-        // .setSleeper(new Sleeper { def sleep(millis: Long): Unit = () })
-        .setDirectUploadEnabled(true)
-        .setDisableGZipContent(true)
-
-      val result = concurrent.blocking(request.toEntity)
-
       driveService.files()
-        .update(result.id, new File().setName(name))
+        .copy(result.id, new File().setParents(Seq(parentId).asJava).setName(name))
         .toEntity
-    } catch { case NonFatal(error) ⇒
-      tryDeleteTempFile(tempFileName)
-      throw error
+    } finally {
+      deleteTempFile(result.id)
     }
   }
 
