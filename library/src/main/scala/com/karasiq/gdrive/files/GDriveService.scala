@@ -73,7 +73,10 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
 
   def createFolder(path: EntityPath): GDrive.Entity = {
     path.foldLeft(GDriveUtils.RootEntity) { (parent, name) ⇒
-      folder(parent.id, name).getOrElse(createFolder(parent.id, name))
+      folder(parent.id, name).getOrElse {
+        createFolder(parent.id, name)
+        folder(parent.id, name).get // Re-query
+      }
     }
   }
 
