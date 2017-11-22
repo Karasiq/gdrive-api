@@ -62,6 +62,6 @@ lazy val testApp = (project in file("test-app"))
   .settings(commonSettings, testAppSettings)
   .dependsOn(library)
 
-lazy val root = (project in file("."))
+lazy val `gdrive-api` = (project in file("."))
   .settings(commonSettings, noPublishSettings)
   .aggregate(library)
