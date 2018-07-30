@@ -1,6 +1,6 @@
 lazy val commonSettings = Seq(
   organization := "com.github.karasiq",
-  version := "1.0.12",
+  version := "1.0.13",
   isSnapshot := version.value.endsWith("SNAPSHOT"),
   // resolvers += Resolver.sonatypeRepo("snapshots"),
   scalaVersion := "2.12.3",

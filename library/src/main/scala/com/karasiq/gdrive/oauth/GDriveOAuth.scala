@@ -2,7 +2,7 @@ package com.karasiq.gdrive.oauth
 
 import java.io.StringReader
 
-import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp
+import com.google.api.client.extensions.java6.auth.oauth2.{AuthorizationCodeInstalledApp, VerificationCodeReceiver}
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver
 import com.google.api.client.googleapis.auth.oauth2.{GoogleAuthorizationCodeFlow, GoogleClientSecrets}
 import com.google.api.services.drive.DriveScopes
@@ -24,26 +24,45 @@ object GDriveOAuth {
 }
 
 class GDriveOAuth(implicit context: GDriveContext) {
-  protected object Settings {
+  object settings {
     val config = context.config.getConfigIfExists("oauth")
     val secrets = config.getConfigIfExists("secrets")
     val accessType = config.withDefault("offline", _.getString("access-type"))
   }
 
-  private[this] val secrets = GDriveOAuth.readSecrets(Settings.secrets)
-  private[this] val authFlow = new GoogleAuthorizationCodeFlow.Builder(context.transport, context.jsonFactory, secrets, DriveScopes.all())
-    .setDataStoreFactory(context.dataStore)
-    .setAccessType(Settings.accessType)
-    .build()
+  object internal {
+    lazy val secrets = createSecrets()
+    lazy val authFlow = createAuthFlow(secrets)
+  }
 
-  private[this] val receiver: LocalServerReceiver = new LocalServerReceiver.Builder()
-    // .setPort(19907)
-    .build()
-  
-  private[this] val installedApp = new AuthorizationCodeInstalledApp(authFlow, receiver)
+  object receiver {
+    lazy val codeReceiver = createCodeReceiver()
+    lazy val installedApp = new AuthorizationCodeInstalledApp(internal.authFlow, codeReceiver)
+  }
 
   def authorize(userId: String): GDriveSession = {
-    val credential = concurrent.blocking(installedApp.authorize(userId))
+    val credential = concurrent.blocking(receiver.installedApp.authorize(userId))
     GDriveSession(userId, credential)
+  }
+
+  protected def driveScopes: java.util.Set[String] = {
+    DriveScopes.all()
+  }
+
+  protected def createSecrets(): GoogleClientSecrets = {
+    GDriveOAuth.readSecrets(settings.secrets)
+  }
+
+  protected def createAuthFlow(secrets: GoogleClientSecrets): GoogleAuthorizationCodeFlow = {
+    new GoogleAuthorizationCodeFlow.Builder(context.transport, context.jsonFactory, secrets, driveScopes)
+      .setDataStoreFactory(context.dataStore)
+      .setAccessType(settings.accessType)
+      .build()
+  }
+
+  protected def createCodeReceiver(): VerificationCodeReceiver = {
+    new LocalServerReceiver.Builder()
+      // .setPort(19907)
+      .build()
   }
 }
