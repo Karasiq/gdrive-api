@@ -4,6 +4,9 @@ Scala Google Drive API
 "com.github.karasiq" %% "gdrive-api" % "1.0.13"
 ```
 
+# Example
+* [Test application](https://github.com/Karasiq/gdrive-api/blob/107e1b6a3ea339ede60c93e62604714e62011490/test-app/src/main/scala/com/karasiq/gdrive/test/TestApp.scala#L19)
+
 # Config
 GDrive context configuration should contain `oauth.secrets` section with the secrets JSON.
 
