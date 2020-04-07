@@ -1,24 +1,24 @@
 package com.karasiq.gdrive.files
 
 import java.io.{InputStream, OutputStream}
-import java.util.UUID
 
-import com.google.api.client.util.IOUtils
+import com.google.api.client.http.{HttpRequest, HttpRequestInitializer}
+import com.google.api.client.util.{IOUtils, Sleeper}
 import com.google.api.services.drive.model.{File, FileList, TeamDrive}
-import com.google.api.services.drive.{Drive, DriveRequest}
+import com.google.api.services.drive.{Drive, DriveRequest, DriveRequestInitializer}
 import com.karasiq.gdrive.context.GDriveContext
 import com.karasiq.gdrive.files.GDriveService.TeamDriveId
 import com.karasiq.gdrive.oauth.GDriveSession
 import com.karasiq.gdrive.query.GDriveUtils
 
 import scala.collection.JavaConverters._
-import scala.util.Try
 
 object GDriveService {
 
   final case class TeamDriveId(id: String) extends AnyVal {
     def enabled: Boolean = id != null
-    def root = if (enabled) GDrive.Entity(id, "", Nil) else GDriveUtils.RootEntity
+
+    def root = if (enabled) GDrive.Entity(id, "", Nil, 0) else GDriveUtils.RootEntity
   }
 
   object TeamDriveId {
@@ -108,7 +108,9 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   def traverseFolder(path: EntityPath)(implicit td: TeamDriveId = TeamDriveId.none): Iterator[(EntityPath, GDrive.Entity)] = {
     def traverseFolderRec(path: EntityPath, folderId: EntityId): Iterator[(EntityPath, GDrive.Entity)] = {
       def files() = this.filesIn(folderId)(td)
+
       def subFolders() = this.foldersIn(folderId)(td)
+
       files().map((path, _)) ++ subFolders().flatMap(folder ⇒ traverseFolderRec(path :+ folder.name, folder.id))
     }
 
@@ -160,12 +162,8 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
   // Upload/download
   // -----------------------------------------------------------------------
   def upload(parentId: EntityId, name: String, content: GDriveContent)(implicit td: TeamDriveId = TeamDriveId.none): GDrive.Entity = {
-    def deleteTempFile(id: EntityId): Unit = {
-      Try(driveService.files().delete(id).execute())
-    }
-
-    val tempFileName = name + "_" + UUID.randomUUID() + ".tmp"
-    val fileMetadata = new File().setName(tempFileName).setTeamDriveId(td.id)
+    val fileMetadata = new File()
+      .setTeamDriveId(td.id)
 
     val request = driveService.files()
       .create(fileMetadata, content)
@@ -174,20 +172,21 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
 
     //noinspection ConvertExpressionToSAM
     request.getMediaHttpUploader
-      // .setSleeper(new Sleeper { def sleep(millis: Long): Unit = () })
+      .setSleeper(new Sleeper {
+        def sleep(millis: Long): Unit = {
+          System.err.println(s"Sleeping $millis ms")
+          concurrent.blocking(Thread.sleep(millis))
+        }
+      })
       .setDirectUploadEnabled(true)
       .setDisableGZipContent(true)
 
-    val result = concurrent.blocking(request.toEntity)
-
-    try {
-      driveService.files()
-        .copy(result.id, new File().setTeamDriveId(td.id).setParents(Seq(parentId).asJava).setName(name))
-        .setSupportsTeamDrives(true)
-        .toEntity
-    } finally {
-      deleteTempFile(result.id)
-    }
+    val fileId = concurrent.blocking(request.toEntityId)
+    driveService.files()
+      .update(fileId, new File().setName(name))
+      .setAddParents(parentId)
+      .setSupportsTeamDrives(true)
+      .toEntity
   }
 
   def download(fileId: EntityId): InputStream = {
@@ -221,6 +220,10 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
       def toEntity: GDrive.Entity = {
         request.setFields(GDrive.Entity.fields)
           .execute()
+      }
+
+      def toEntityId: EntityId = {
+        request.setFields("id").execute().getId
       }
     }
 

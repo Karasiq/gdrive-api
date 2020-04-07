@@ -7,14 +7,15 @@ import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver
 import com.google.api.client.googleapis.auth.oauth2.{GoogleAuthorizationCodeFlow, GoogleClientSecrets}
 import com.google.api.services.drive.DriveScopes
 import com.typesafe.config.Config
+import scala.collection.JavaConverters._
 
 import com.karasiq.common.configs.ConfigEncoding
 import com.karasiq.common.configs.ConfigImplicits._
 import com.karasiq.gdrive.context.GDriveContext
 
 object GDriveOAuth {
-  def apply()(implicit context: GDriveContext): GDriveOAuth = {
-    new GDriveOAuth()
+  def apply(scopes: Set[String] = Set(DriveScopes.DRIVE))(implicit context: GDriveContext): GDriveOAuth = {
+    new GDriveOAuth(scopes)
   }
 
   private def readSecrets(config: Config)(implicit context: GDriveContext): GoogleClientSecrets = {
@@ -23,7 +24,7 @@ object GDriveOAuth {
   }
 }
 
-class GDriveOAuth(implicit context: GDriveContext) {
+class GDriveOAuth(scopes: Set[String])(implicit context: GDriveContext) {
   object settings {
     val config = context.config.getConfigIfExists("oauth")
     val secrets = config.getConfigIfExists("secrets")
@@ -45,16 +46,12 @@ class GDriveOAuth(implicit context: GDriveContext) {
     GDriveSession(userId, credential)
   }
 
-  protected def driveScopes: java.util.Set[String] = {
-    DriveScopes.all()
-  }
-
   protected def createSecrets(): GoogleClientSecrets = {
     GDriveOAuth.readSecrets(settings.secrets)
   }
 
   protected def createAuthFlow(secrets: GoogleClientSecrets): GoogleAuthorizationCodeFlow = {
-    new GoogleAuthorizationCodeFlow.Builder(context.transport, context.jsonFactory, secrets, driveScopes)
+    new GoogleAuthorizationCodeFlow.Builder(context.transport, context.jsonFactory, secrets, scopes.asJava)
       .setDataStoreFactory(context.dataStore)
       .setAccessType(settings.accessType)
       .build()
