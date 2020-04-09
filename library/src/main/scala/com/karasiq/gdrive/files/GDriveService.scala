@@ -2,10 +2,9 @@ package com.karasiq.gdrive.files
 
 import java.io.{InputStream, OutputStream}
 
-import com.google.api.client.http.{HttpRequest, HttpRequestInitializer}
 import com.google.api.client.util.{IOUtils, Sleeper}
 import com.google.api.services.drive.model.{File, FileList, TeamDrive}
-import com.google.api.services.drive.{Drive, DriveRequest, DriveRequestInitializer}
+import com.google.api.services.drive.{Drive, DriveRequest}
 import com.karasiq.gdrive.context.GDriveContext
 import com.karasiq.gdrive.files.GDriveService.TeamDriveId
 import com.karasiq.gdrive.oauth.GDriveSession
@@ -158,12 +157,21 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
       .execute()
   }
 
+  def update(fileId: EntityId, attrs: File => File): Unit = {
+    driveService.files()
+      .update(fileId, attrs(new File))
+      .execute()
+  }
+
   // -----------------------------------------------------------------------
   // Upload/download
   // -----------------------------------------------------------------------
-  def upload(parentId: EntityId, name: String, content: GDriveContent)(implicit td: TeamDriveId = TeamDriveId.none): GDrive.Entity = {
-    val fileMetadata = new File()
-      .setTeamDriveId(td.id)
+  def upload(parentId: EntityId, name: String, content: GDriveContent, safe: Boolean = false)(implicit td: TeamDriveId = TeamDriveId.none): GDrive.Entity = {
+    val fileMetadata = {
+      val base = new File().setTeamDriveId(td.id)
+      if (safe) base.setName(s"$name.tmp")
+      else base.setName(name).setParents(Seq(parentId).asJava)
+    }
 
     val request = driveService.files()
       .create(fileMetadata, content)
@@ -174,19 +182,21 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
     request.getMediaHttpUploader
       .setSleeper(new Sleeper {
         def sleep(millis: Long): Unit = {
-          System.err.println(s"Sleeping $millis ms")
+          // System.err.println(s"[${Thread.currentThread()}] Sleeping $millis ms")
           concurrent.blocking(Thread.sleep(millis))
         }
       })
       .setDirectUploadEnabled(true)
       .setDisableGZipContent(true)
 
-    val fileId = concurrent.blocking(request.toEntityId)
-    driveService.files()
-      .update(fileId, new File().setName(name))
-      .setAddParents(parentId)
-      .setSupportsTeamDrives(true)
-      .toEntity
+    if (safe) {
+      val fileId = concurrent.blocking(request.toEntityId)
+      driveService.files()
+        .update(fileId, new File().setName(name))
+        .setAddParents(parentId)
+        .setSupportsTeamDrives(true)
+        .toEntity
+    } else request.toEntity
   }
 
   def download(fileId: EntityId): InputStream = {
@@ -255,7 +265,5 @@ class GDriveService(applicationName: String)(implicit context: GDriveContext, se
       def toEntityList: EntityList =
         fl.getFiles.asScala.map(GDrive.Entity.fromFile)
     }
-
   }
-
 }
